@@ -4,6 +4,9 @@
   "private": true,
   "description": "Multi-tenant real-time document collaboration SaaS backend (MongoDB + Yjs WebSocket)",
   "main": "dist/server.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",

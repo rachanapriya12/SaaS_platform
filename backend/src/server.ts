@@ -99,9 +99,9 @@ const PORT = parseInt(process.env.PORT || '4000', 10);
 (async () => {
   try {
     await connectMongo();
-    server.listen(PORT, () => {
-      console.log(`[backend] listening on http://localhost:${PORT}`);
-      console.log(`[backend] websocket: ws://localhost:${PORT}/collaboration/:tenantId/:documentId`);
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`[backend] listening on port ${PORT}`);
+      console.log(`[backend] websocket path: /collaboration/:tenantId/:documentId`);
     });
   } catch (err) {
     console.error('[backend] failed to start:', err);

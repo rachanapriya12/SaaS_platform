@@ -219,3 +219,4 @@ After the first frontend deploy, copy its URL and update the backend's `CORS_ORI
 - **Cannot connect to Mongo** → check Atlas IP allow-list and that the user/password are correct.
 - **CORS error in browser** → set `CORS_ORIGIN` in the backend to the exact frontend origin.
 - **WebSocket fails on Vercel** → expected. Host the backend on Render/Railway/Fly and point `VITE_API_BASE` to that URL.
+- **Render: “Exited with status 254”** → the service root is probably the repo root (no `package.json` there). In Render → **Settings** → **Root Directory**, set **`backend`**, save, and **Manual Deploy**. Or use the repo’s **`render.yaml`** Blueprint so Render always builds from `backend/`.

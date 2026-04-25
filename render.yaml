@@ -1,0 +1,32 @@
+# Render Blueprint — deploys the Express + WebSocket API from /backend
+# https://render.com/docs/blueprint-spec
+#
+# After first deploy, set these in the Render dashboard (Environment):
+#   MONGODB_URI, JWT_SECRET, JWT_REFRESH_SECRET, CORS_ORIGIN (your Vercel URL)
+
+services:
+  - type: web
+    name: collabdocs-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: ACCESS_TOKEN_TTL
+        value: 15m
+      - key: REFRESH_TOKEN_TTL
+        value: 7d
+      # Set values in Dashboard → Environment (do not commit secrets):
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
