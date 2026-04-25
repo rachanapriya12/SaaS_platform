@@ -1,0 +1,45 @@
+{
+  "name": "collab-saas-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-tenant real-time document collaboration SaaS backend (MongoDB + Yjs WebSocket)",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "seed": "tsx src/seed.ts",
+    "reset": "tsx src/reset.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "lib0": "^0.2.97",
+    "mongoose": "^8.7.0",
+    "morgan": "^1.10.0",
+    "nanoid": "^5.0.7",
+    "sanitize-html": "^2.13.0",
+    "ws": "^8.18.0",
+    "y-protocols": "^1.0.6",
+    "yjs": "^13.6.19"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.7",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^22.5.5",
+    "@types/sanitize-html": "^2.13.0",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}
