@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import * as Y from 'yjs';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -61,10 +61,10 @@ export default function EditorPage() {
 
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<CollabProvider | null>(null);
-  const docIdRef = useRef<string | null>(null);
   const canHtmlAutosaveRef = useRef(false);
   const hasSyncedOnceRef = useRef(false);
-  const htmlAutosaveTimer = useRef<number | null>(null);
+  const [surfaceEditor, setSurfaceEditor] = useState<Editor | null>(null);
+  const onSurfaceEditor = useCallback((ed: Editor | null) => setSurfaceEditor(ed), []);
 
   // Step 1: load document metadata + ensure tenant context is correct
   useEffect(() => {
@@ -112,10 +112,6 @@ export default function EditorPage() {
       cancelled = true;
     };
   }, [documentId, memberships]);
-
-  useEffect(() => {
-    docIdRef.current = doc?.id ?? null;
-  }, [doc?.id]);
 
   useEffect(() => {
     canHtmlAutosaveRef.current = !!(access?.canEdit && collab);
@@ -188,76 +184,8 @@ export default function EditorPage() {
     };
   }, [doc?.id, access?.canEdit, user?.id]);
 
-  const editor = useEditor(
-    {
-      editable: !!access?.canEdit,
-      extensions:
-        collab
-          ? [
-              StarterKit.configure({ history: false }),
-              Underline,
-              Link2.configure({ openOnClick: false }),
-              Placeholder.configure({
-                placeholder: 'Start typing… your changes are saved and synced in real time.',
-              }),
-              Collaboration.configure({ document: collab.ydoc }),
-              CollaborationCursor.configure({
-                provider: collab.provider,
-                user: {
-                  name: user?.name || 'User',
-                  color: user ? colorFor(user.id) : '#3b82f6',
-                },
-              }),
-            ]
-          : [
-              StarterKit,
-              Underline,
-              Link2.configure({ openOnClick: false }),
-              Placeholder.configure({ placeholder: 'Loading…' }),
-            ],
-      onUpdate: ({ editor: ed }) => {
-        scheduleAutosaveIndicator();
-        if (!hasSyncedOnceRef.current || !canHtmlAutosaveRef.current || !docIdRef.current) return;
-        if (htmlAutosaveTimer.current) window.clearTimeout(htmlAutosaveTimer.current);
-        const id = docIdRef.current;
-        const html = ed.getHTML();
-        htmlAutosaveTimer.current = window.setTimeout(() => {
-          htmlAutosaveTimer.current = null;
-          Api.putDoc(id, { contentHtml: html, autosave: true })
-            .then(() => setSaveError(null))
-            .catch((err) =>
-              setSaveError(err instanceof Error ? err.message : 'Could not save document to server')
-            );
-        }, 800);
-      },
-    },
-    [collab?.provider, collab?.ydoc, access?.canEdit]
-  );
-
   const indicatorTimer = useRef<number | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (htmlAutosaveTimer.current) window.clearTimeout(htmlAutosaveTimer.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    const flush = () => {
-      if (document.visibilityState !== 'hidden') return;
-      const ed = editor;
-      const id = doc?.id;
-      if (!ed || ed.isDestroyed || !access?.canEdit || !collab || !id || !hasSyncedOnceRef.current)
-        return;
-      Api.putDoc(id, { contentHtml: ed.getHTML(), autosave: true })
-        .then(() => setSaveError(null))
-        .catch((err) =>
-          setSaveError(err instanceof Error ? err.message : 'Could not save document to server')
-        );
-    };
-    document.addEventListener('visibilitychange', flush);
-    return () => document.removeEventListener('visibilitychange', flush);
-  }, [editor, doc?.id, access?.canEdit, collab]);
   function scheduleAutosaveIndicator() {
     if (indicatorTimer.current) window.clearTimeout(indicatorTimer.current);
     indicatorTimer.current = window.setTimeout(() => setSavedAt(Date.now()), 800);
@@ -379,7 +307,7 @@ export default function EditorPage() {
             )}
           </div>
         </div>
-        <EditorToolbar editor={editor} disabled={!canEdit} />
+        <EditorToolbar editor={surfaceEditor} disabled={!canEdit} />
       </header>
 
       <main className="flex-1 px-4 py-8">
@@ -389,10 +317,25 @@ export default function EditorPage() {
               {saveError}
             </div>
           )}
-          {!synced && (
+          {!collab && (
+            <div className="text-sm text-slate-500 mb-4">Preparing collaborative editor…</div>
+          )}
+          {collab && !synced && (
             <div className="text-xs text-slate-400 mb-2">Syncing live collaboration…</div>
           )}
-          <EditorContent editor={editor} />
+          {collab && user && (
+            <CollaborativeEditorSurface
+              collab={collab}
+              doc={doc}
+              access={access}
+              user={user}
+              hasSyncedOnceRef={hasSyncedOnceRef}
+              canHtmlAutosaveRef={canHtmlAutosaveRef}
+              setSaveError={setSaveError}
+              scheduleAutosaveIndicator={scheduleAutosaveIndicator}
+              onEditor={onSurfaceEditor}
+            />
+          )}
         </div>
       </main>
 
@@ -417,6 +360,97 @@ export default function EditorPage() {
       />
     </div>
   );
+}
+
+/** TipTap must not mount until Yjs exists — otherwise typing never reaches MongoDB or peers. */
+function CollaborativeEditorSurface({
+  collab,
+  doc,
+  access,
+  user,
+  hasSyncedOnceRef,
+  canHtmlAutosaveRef,
+  setSaveError,
+  scheduleAutosaveIndicator,
+  onEditor,
+}: {
+  collab: { ydoc: Y.Doc; provider: CollabProvider };
+  doc: any;
+  access: any;
+  user: any;
+  hasSyncedOnceRef: MutableRefObject<boolean>;
+  canHtmlAutosaveRef: MutableRefObject<boolean>;
+  setSaveError: (msg: string | null) => void;
+  scheduleAutosaveIndicator: () => void;
+  onEditor: (ed: Editor | null) => void;
+}) {
+  const htmlAutosaveTimer = useRef<number | null>(null);
+
+  const editor = useEditor(
+    {
+      editable: !!access?.canEdit,
+      extensions: [
+        StarterKit.configure({ history: false }),
+        Underline,
+        Link2.configure({ openOnClick: false }),
+        Placeholder.configure({
+          placeholder: 'Start typing… your changes are saved and synced in real time.',
+        }),
+        Collaboration.configure({ document: collab.ydoc }),
+        CollaborationCursor.configure({
+          provider: collab.provider,
+          user: {
+            name: user?.name || 'User',
+            color: user ? colorFor(user.id) : '#3b82f6',
+          },
+        }),
+      ],
+      onUpdate: ({ editor: ed }) => {
+        scheduleAutosaveIndicator();
+        if (!hasSyncedOnceRef.current || !canHtmlAutosaveRef.current || !doc?.id) return;
+        if (htmlAutosaveTimer.current) window.clearTimeout(htmlAutosaveTimer.current);
+        const id = doc.id;
+        const html = ed.getHTML();
+        htmlAutosaveTimer.current = window.setTimeout(() => {
+          htmlAutosaveTimer.current = null;
+          Api.putDoc(id, { contentHtml: html, autosave: true })
+            .then(() => setSaveError(null))
+            .catch((err) =>
+              setSaveError(err instanceof Error ? err.message : 'Could not save document to server')
+            );
+        }, 800);
+      },
+    },
+    [collab.ydoc, collab.provider, access?.canEdit, user?.id, doc?.id]
+  );
+
+  useEffect(() => {
+    onEditor(editor ?? null);
+    return () => onEditor(null);
+  }, [editor, onEditor]);
+
+  useEffect(() => {
+    return () => {
+      if (htmlAutosaveTimer.current) window.clearTimeout(htmlAutosaveTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const flush = () => {
+      if (document.visibilityState !== 'hidden') return;
+      const ed = editor;
+      if (!ed || ed.isDestroyed || !access?.canEdit || !doc?.id || !hasSyncedOnceRef.current) return;
+      Api.putDoc(doc.id, { contentHtml: ed.getHTML(), autosave: true })
+        .then(() => setSaveError(null))
+        .catch((err) =>
+          setSaveError(err instanceof Error ? err.message : 'Could not save document to server')
+        );
+    };
+    document.addEventListener('visibilitychange', flush);
+    return () => document.removeEventListener('visibilitychange', flush);
+  }, [editor, doc?.id, access?.canEdit]);
+
+  return editor ? <EditorContent editor={editor} /> : null;
 }
 
 function SaveStatus({
