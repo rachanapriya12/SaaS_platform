@@ -1,9 +1,7 @@
-/* All Mongoose models live in one file for simpler imports. */
-
 import mongoose, { Schema, InferSchemaType, Model } from 'mongoose';
 import { nanoid } from 'nanoid';
 
-/* --- Tenant / Organization --- */
+
 const tenantSchema = new Schema(
   {
     _id: { type: String, default: () => nanoid() },

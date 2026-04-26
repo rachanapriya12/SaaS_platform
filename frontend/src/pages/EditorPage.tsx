@@ -22,8 +22,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Api, getAccessToken, setActiveTenant as setApiTenant } from '../lib/api';
-import { CollabProvider } from '../lib/yjs-provider';
-import { getWebsocketBase } from '../lib/apiBase';
+import { CollabProvider, getWebsocketBase } from '../lib/yjs-provider';
 import EditorToolbar from '../components/EditorToolbar';
 import ShareModal from '../components/ShareModal';
 import VersionHistoryPanel from '../components/VersionHistoryPanel';

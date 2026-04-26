@@ -1,6 +1,9 @@
-/* Lightweight API client with auto refresh + tenant header injection */
+const PROD_API = 'https://saas-platform-v4o3.onrender.com';
+const DEV_API = 'http://localhost:4000';
 
-import { getApiBase } from './apiBase';
+const API_BASE =
+  (import.meta.env.VITE_API_BASE as string) ||
+  (import.meta.env.PROD ? PROD_API : DEV_API);
 
 export interface ApiError extends Error {
   status: number;
@@ -44,12 +47,14 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
-export { getApiBase } from './apiBase';
+export function getApiBase() {
+  return API_BASE;
+}
 
 async function refreshAccessToken(): Promise<boolean> {
   if (!refreshToken) return false;
   try {
-    const res = await fetch(`${getApiBase()}/auth/refresh`, {
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
@@ -77,7 +82,7 @@ export async function api<T = unknown>(
   if (sendTenant && tenantId) finalHeaders['X-Tenant-Id'] = tenantId;
 
   const doFetch = () =>
-    fetch(`${getApiBase()}${path}`, {
+    fetch(`${API_BASE}${path}`, {
       ...rest,
       headers: finalHeaders,
       body: json !== undefined ? JSON.stringify(json) : (rest as RequestInit).body,
@@ -96,7 +101,7 @@ export async function api<T = unknown>(
     try {
       data = await res.json();
     } catch {
-      /* ignore */
+      /* noop */
     }
     const message =
       (data as { error?: string })?.error || `HTTP ${res.status} ${res.statusText}`;
@@ -110,7 +115,6 @@ export async function api<T = unknown>(
 }
 
 export const Api = {
-  /* Auth */
   login: (email: string, password: string) =>
     api<{
       accessToken: string;
@@ -133,7 +137,6 @@ export const Api = {
   logout: (refreshToken: string) =>
     api('/auth/logout', { method: 'POST', json: { refreshToken }, sendTenant: false }),
 
-  /* Orgs */
   listOrgs: () => api<{ tenants: any[] }>('/organizations', { sendTenant: false }),
   createOrg: (data: {
     name: string;
@@ -156,7 +159,6 @@ export const Api = {
   deactivateOrg: (id: string) =>
     api(`/organizations/${id}`, { method: 'DELETE', sendTenant: false }),
 
-  /* Users */
   listUsers: (tenantId: string) =>
     api<{ members: any[] }>(`/organizations/${tenantId}/users`, { sendTenant: false }),
   inviteUser: (
@@ -185,7 +187,6 @@ export const Api = {
       sendTenant: false,
     }),
 
-  /* Documents */
   listDocs: (includeDeleted = false) =>
     api<{ documents: any[] }>(`/documents${includeDeleted ? '?includeDeleted=1' : ''}`),
   getDoc: (id: string) => api<{ document: any; access: any; latestVersion: any }>(`/documents/${id}`),
@@ -196,7 +197,6 @@ export const Api = {
   deleteDoc: (id: string) => api(`/documents/${id}`, { method: 'DELETE' }),
   restoreDoc: (id: string) => api(`/documents/${id}/restore`, { method: 'POST' }),
 
-  /* Sharing */
   listPermissions: (id: string) => api<{ permissions: any[] }>(`/documents/${id}/permissions`),
   share: (id: string, data: { userId?: string; email?: string; role: string }) =>
     api(`/documents/${id}/share`, { method: 'POST', json: data }),
@@ -205,7 +205,6 @@ export const Api = {
   revokePermission: (id: string, userId: string) =>
     api(`/documents/${id}/permissions/${userId}`, { method: 'DELETE' }),
 
-  /* Versions */
   listVersions: (id: string) => api<{ versions: any[] }>(`/documents/${id}/versions`),
   getVersion: (id: string, versionId: string) =>
     api<{ version: any }>(`/documents/${id}/versions/${versionId}`),
@@ -214,7 +213,6 @@ export const Api = {
       method: 'POST',
     }),
 
-  /* Stats */
   stats: (opts: { sendTenant?: boolean } = { sendTenant: true }) =>
     api<{
       scope: 'platform' | 'tenant';
@@ -233,7 +231,6 @@ export const Api = {
       }>;
     }>('/stats', { sendTenant: opts.sendTenant ?? true }),
 
-  /* Audit */
   audit: (params: { action?: string; targetId?: string; limit?: number; offset?: number } = {}) => {
     const sp = new URLSearchParams();
     if (params.action) sp.set('action', params.action);

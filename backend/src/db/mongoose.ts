@@ -1,15 +1,11 @@
 import mongoose from 'mongoose';
 import dns from 'dns';
 
-/**
- * mongodb+srv:// URIs require a DNS SRV lookup. On networks with
- * VPN / corporate DNS / certain Windows DNS configurations this lookup
- * fails with `querySrv ECONNREFUSED`. Forcing public DNS resolvers fixes it.
- */
+// Force public DNS so mongodb+srv lookups work on restricted networks
 try {
   dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
 } catch {
-  /* ignore */
+  /* noop */
 }
 
 let connecting: Promise<typeof mongoose> | null = null;

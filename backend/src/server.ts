@@ -73,7 +73,6 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(500).json({ error: 'Internal server error' });
 });
 
-/* WebSocket: /collaboration/:tenantId/:documentId */
 const wss = new WebSocketServer({ noServer: true });
 attachCollabWebsocket(wss);
 

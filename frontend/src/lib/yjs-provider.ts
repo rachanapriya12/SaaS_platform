@@ -1,10 +1,9 @@
-/* Custom Yjs WebSocket provider with auth token & tenant in URL */
-
 import * as Y from 'yjs';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
+import { getApiBase } from './api';
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
@@ -86,13 +85,11 @@ export class CollabProvider {
     ws.onopen = () => {
       this.reconnectAttempts = 0;
       this.setStatus('connected');
-      // Send sync step 1
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, MESSAGE_SYNC);
       syncProtocol.writeSyncStep1(encoder, this.doc);
       ws.send(encoding.toUint8Array(encoder));
 
-      // Broadcast our awareness state
       if (this.awareness.getLocalState() !== null) {
         const aEnc = encoding.createEncoder();
         encoding.writeVarUint(aEnc, MESSAGE_AWARENESS);
@@ -112,7 +109,6 @@ export class CollabProvider {
           const encoder = encoding.createEncoder();
           encoding.writeVarUint(encoder, MESSAGE_SYNC);
           const syncMessageType = syncProtocol.readSyncMessage(decoder, encoder, this.doc, this);
-          // syncMessageType 1 = SyncStep2 (server replied with full state)
           if (syncMessageType === 1) {
             this.setSynced(true);
           }
@@ -132,7 +128,7 @@ export class CollabProvider {
       }
     };
     ws.onerror = () => {
-      // ignore — handled in close
+      /* handled in close */
     };
     ws.onclose = () => {
       this.ws = null;
@@ -211,4 +207,8 @@ export class CollabProvider {
       'window unload'
     );
   };
+}
+
+export function getWebsocketBase() {
+  return getApiBase().replace(/^http/, 'ws');
 }

@@ -10,11 +10,6 @@ import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { DocumentDoc, User, Version, YjsUpdate } from '../models';
 
-/* ------------------------------------------------------------------ *
- *   Y-WebSocket compatible server with auth + tenant/permission gate *
- *   (MongoDB persistence)                                            *
- * ------------------------------------------------------------------ */
-
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
 
