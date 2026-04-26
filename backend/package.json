@@ -15,6 +15,15 @@
     "reset": "tsx src/reset.ts"
   },
   "dependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.7",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^22.5.5",
+    "@types/sanitize-html": "^2.13.0",
+    "@types/ws": "^8.5.12",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -28,21 +37,12 @@
     "morgan": "^1.10.0",
     "nanoid": "^5.0.7",
     "sanitize-html": "^2.13.0",
+    "typescript": "5.5.4",
     "ws": "^8.18.0",
     "y-protocols": "^1.0.6",
     "yjs": "^13.6.19"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
-    "@types/cookie-parser": "^1.4.7",
-    "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
-    "@types/jsonwebtoken": "^9.0.6",
-    "@types/morgan": "^1.9.9",
-    "@types/node": "^22.5.5",
-    "@types/sanitize-html": "^2.13.0",
-    "@types/ws": "^8.5.12",
-    "tsx": "^4.19.1",
-    "typescript": "5.5.4"
+    "tsx": "^4.19.1"
   }
 }
