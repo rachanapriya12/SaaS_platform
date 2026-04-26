@@ -5,6 +5,7 @@ import { resolveDocAccess, getOrgRole } from '../utils/permissions';
 import { writeAudit } from '../utils/audit';
 import { DocumentDoc, Permission, Version, User } from '../models';
 import { isHtmlEffectivelyEmpty } from '../utils/htmlContent';
+import { encodeYjsSnapshotFromSanitizedHtml } from '../utils/yDocSeed';
 
 const router = Router();
 
@@ -229,6 +230,7 @@ async function writeDocument(req: Request, res: Response, next: NextFunction) {
       }
 
       doc.contentHtml = clean;
+      doc.contentBytes = encodeYjsSnapshotFromSanitizedHtml(clean);
       if (!isAutosave) {
         const last = await Version.findOne({ documentId: doc._id }).sort({ versionNumber: -1 }).lean();
         const next = (last?.versionNumber ?? 0) + 1;

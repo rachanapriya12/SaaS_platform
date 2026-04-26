@@ -23,7 +23,6 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { Api, getAccessToken, setActiveTenant as setApiTenant } from '../lib/api';
 import { CollabProvider, getWebsocketBase } from '../lib/yjs-provider';
-import { seedYDocFromHtml } from '../lib/seedYDocFromHtml';
 import EditorToolbar from '../components/EditorToolbar';
 import ShareModal from '../components/ShareModal';
 import VersionHistoryPanel from '../components/VersionHistoryPanel';
@@ -116,14 +115,10 @@ export default function EditorPage() {
     canHtmlAutosaveRef.current = !!(access?.canEdit && collab);
   }, [access?.canEdit, collab]);
 
-  // Step 2: hydrate Y.Doc from MongoDB HTML, then WebSocket (room = tenantId + documentId on server)
+  // Step 2: empty Y.Doc — server pushes full Yjs state on connect (Mongo-backed session)
   useEffect(() => {
     if (!doc || !access || !user) return;
     const ydoc = new Y.Doc();
-    const initialHtml = String(doc.content_html ?? '').trim();
-    if (initialHtml) {
-      seedYDocFromHtml(ydoc, initialHtml);
-    }
     ydocRef.current = ydoc;
     const token = getAccessToken();
     if (!token) {

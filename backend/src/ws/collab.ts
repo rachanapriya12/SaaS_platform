@@ -10,6 +10,7 @@ import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { DocumentDoc, User, Version, YjsUpdate } from '../models';
 import { isHtmlEffectivelyEmpty } from '../utils/htmlContent';
+import { seedYDocFromHtml } from '../utils/yDocSeed';
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
@@ -202,8 +203,17 @@ function sendBytes(ws: WebSocket, bytes: Uint8Array) {
 }
 
 function toUint8Array(value: unknown): Uint8Array {
+  if (typeof value === 'string') {
+    return new TextEncoder().encode(value);
+  }
+  if (value instanceof ArrayBuffer) {
+    return new Uint8Array(value);
+  }
   if (value instanceof Uint8Array) {
     return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  if (Array.isArray(value)) {
+    return new Uint8Array(Buffer.concat(value as Buffer[]));
   }
   if (Buffer.isBuffer(value)) {
     return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
@@ -331,37 +341,6 @@ function normalizeTag(tag: string) {
   }
 }
 
-function seedYDocFromHtml(ydoc: Y.Doc, html: string) {
-  const text = html
-    .replace(/<\/(p|h[1-6]|li|blockquote)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (text.length === 0) return;
-  const frag = ydoc.getXmlFragment('default');
-  ydoc.transact(() => {
-    frag.insert(
-      0,
-      text.map((line) => {
-        const p = new Y.XmlElement('paragraph');
-        const t = new Y.XmlText();
-        t.insert(0, line);
-        p.insert(0, [t]);
-        return p;
-      })
-    );
-  });
-}
-
 function escapeHtml(s: string) {
   return s
     .replace(/&/g, '&amp;')
@@ -449,7 +428,7 @@ export function attachCollabWebsocket(wss: WebSocketServer) {
 
       ws.binaryType = 'arraybuffer';
 
-      /* Awareness only — Yjs sync is client-initiated (SyncStep1) per y-protocols */
+      /* Awareness snapshot for existing peers */
       {
         const states = session.awareness.getStates();
         if (states.size > 0) {
@@ -466,13 +445,17 @@ export function attachCollabWebsocket(wss: WebSocketServer) {
         }
       }
 
+      /* Full room state for this socket (late joiners were missing E1 without this) */
+      {
+        const sEnc = encoding.createEncoder();
+        encoding.writeVarUint(sEnc, MESSAGE_SYNC);
+        const remoteSv = Y.encodeStateVector(new Y.Doc());
+        syncProtocol.writeSyncStep2(sEnc, session.ydoc, remoteSv);
+        sendBytes(ws, encoding.toUint8Array(sEnc));
+      }
+
       ws.on('message', (data) => {
-        const buf =
-          data instanceof ArrayBuffer
-            ? new Uint8Array(data)
-            : Array.isArray(data)
-            ? new Uint8Array(Buffer.concat(data))
-            : new Uint8Array(data as Buffer);
+        const buf = toUint8Array(data);
         try {
           const decoder = decoding.createDecoder(buf);
           const messageType = decoding.readVarUint(decoder);
