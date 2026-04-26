@@ -1,0 +1,9 @@
+fix(collab): persist Y.Doc snapshot to MongoDB and unblock sync indicator
+
+Reload was returning empty docs because replaying many small Yjs update
+rows could fail silently. Now the server stores a full encoded Y.Doc
+snapshot on DocumentDoc.contentBytes (debounced + on close) and prefers
+it on load, so a refresh always restores the latest content.
+
+Also adds a 2s sync fallback in the WS provider so the editor never gets
+stuck on "Syncing..." even if the server's SyncStep2 is lost.

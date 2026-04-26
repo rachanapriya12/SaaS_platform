@@ -45,6 +45,7 @@ const documentSchema = new Schema(
     tenantId: { type: String, required: true, index: true },
     title: { type: String, required: true },
     contentHtml: { type: String, default: '' },
+    contentBytes: { type: Buffer, default: null },
     createdBy: { type: String, required: true },
     deletedAt: { type: Date, default: null, index: true },
   },

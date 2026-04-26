@@ -42,6 +42,21 @@ function roomKey(tenantId: string, documentId: string) {
 
 async function loadDocFromStorage(tenantId: string, documentId: string): Promise<Y.Doc> {
   const ydoc = new Y.Doc();
+
+  const docRow = await DocumentDoc.findOne(
+    { _id: documentId, tenantId },
+    'contentBytes contentHtml'
+  ).lean();
+
+  if (docRow?.contentBytes) {
+    try {
+      Y.applyUpdate(ydoc, toUint8Array(docRow.contentBytes));
+      return ydoc;
+    } catch (e) {
+      console.error('[ws] snapshot apply failed:', e);
+    }
+  }
+
   const updates = await YjsUpdate.find({ tenantId, documentId })
     .sort({ _id: 1 })
     .lean();
@@ -55,13 +70,15 @@ async function loadDocFromStorage(tenantId: string, documentId: string): Promise
         }
       }
     });
-  } else {
-    const doc = await DocumentDoc.findOne({ _id: documentId, tenantId }, 'contentHtml').lean();
-    const latest = await Version.findOne({ documentId }, 'contentHtml').sort({ versionNumber: -1 }).lean();
-    const html = (doc?.contentHtml || latest?.contentHtml || '').trim();
-    if (html) {
-      seedYDocFromHtml(ydoc, html);
-    }
+    return ydoc;
+  }
+
+  const latest = await Version.findOne({ documentId }, 'contentHtml')
+    .sort({ versionNumber: -1 })
+    .lean();
+  const html = (docRow?.contentHtml || latest?.contentHtml || '').trim();
+  if (html) {
+    seedYDocFromHtml(ydoc, html);
   }
   return ydoc;
 }
@@ -191,9 +208,16 @@ async function persistUpdate(tenantId: string, documentId: string, update: Uint8
 
 async function saveCurrentContent(tenantId: string, documentId: string, ydoc: Y.Doc) {
   try {
+    const snapshot = Y.encodeStateAsUpdate(ydoc);
     await DocumentDoc.updateOne(
       { _id: documentId, tenantId },
-      { $set: { contentHtml: yDocToHtml(ydoc), updatedAt: new Date() } }
+      {
+        $set: {
+          contentBytes: Buffer.from(snapshot),
+          contentHtml: yDocToHtml(ydoc),
+          updatedAt: new Date(),
+        },
+      }
     );
   } catch (err) {
     console.error('[ws] saveCurrentContent failed:', err);

@@ -31,6 +31,7 @@ export class CollabProvider {
   private statusListeners: Set<StatusListener> = new Set();
   private reconnectAttempts = 0;
   private reconnectTimer: number | null = null;
+  private syncFallbackTimer: number | null = null;
   private synced = false;
   private syncedListeners: Set<(synced: boolean) => void> = new Set();
 
@@ -99,6 +100,12 @@ export class CollabProvider {
         );
         ws.send(encoding.toUint8Array(aEnc));
       }
+
+      if (this.syncFallbackTimer) window.clearTimeout(this.syncFallbackTimer);
+      this.syncFallbackTimer = window.setTimeout(() => {
+        this.syncFallbackTimer = null;
+        this.setSynced(true);
+      }, 2000);
     };
     ws.onmessage = (e) => {
       const data = new Uint8Array(e.data as ArrayBuffer);
@@ -132,6 +139,10 @@ export class CollabProvider {
     };
     ws.onclose = () => {
       this.ws = null;
+      if (this.syncFallbackTimer) {
+        window.clearTimeout(this.syncFallbackTimer);
+        this.syncFallbackTimer = null;
+      }
       this.setSynced(false);
       this.setStatus('disconnected');
       if (this.shouldConnect) this.scheduleReconnect();
@@ -163,6 +174,10 @@ export class CollabProvider {
 
   destroy() {
     this.disconnect();
+    if (this.syncFallbackTimer) {
+      window.clearTimeout(this.syncFallbackTimer);
+      this.syncFallbackTimer = null;
+    }
     this.doc.off('update', this.onDocUpdate);
     this.awareness.off('update', this.onAwarenessUpdate);
     awarenessProtocol.removeAwarenessStates(
