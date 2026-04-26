@@ -1,8 +1,9 @@
 const PROD_API = 'https://saas-platform-v4o3.onrender.com';
 const DEV_API = 'http://localhost:4000';
+const ENV_API = (import.meta.env.VITE_API_BASE as string | undefined)?.trim();
 
 const API_BASE =
-  (import.meta.env.VITE_API_BASE as string) ||
+  (import.meta.env.PROD && ENV_API?.includes('localhost') ? undefined : ENV_API) ||
   (import.meta.env.PROD ? PROD_API : DEV_API);
 
 export interface ApiError extends Error {
