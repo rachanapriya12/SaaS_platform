@@ -22,15 +22,22 @@ import statsRoutes from './routes/stats';
 const app = express();
 const server = http.createServer(app);
 
-const corsOrigin = (process.env.CORS_ORIGIN || 'http://localhost:5173')
-  .split(',')
-  .map((s) => s.trim());
+const corsOriginRaw = process.env.CORS_ORIGIN?.trim();
+/* Reflect request Origin when unset or * — fixes Vercel preview URLs without redeploying Render */
+const corsReflectAll =
+  !corsOriginRaw || corsOriginRaw === '*' || corsOriginRaw.toLowerCase() === 'true';
+const corsOriginList = corsReflectAll
+  ? null
+  : corsOriginRaw.split(',').map((s) => s.trim());
 
 app.use(helmet());
 app.use(
   cors({
-    origin: corsOrigin,
+    ...(corsReflectAll
+      ? { origin: true }
+      : { origin: corsOriginList as string[] }),
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id'],
   })
 );
 app.use(express.json({ limit: '2mb' }));

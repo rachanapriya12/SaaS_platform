@@ -62,7 +62,6 @@ export default function EditorPage() {
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<CollabProvider | null>(null);
   const canHtmlAutosaveRef = useRef(false);
-  const hasSyncedOnceRef = useRef(false);
   const [surfaceEditor, setSurfaceEditor] = useState<Editor | null>(null);
   const onSurfaceEditor = useCallback((ed: Editor | null) => setSurfaceEditor(ed), []);
 
@@ -148,14 +147,8 @@ export default function EditorPage() {
       id: user.id,
     });
 
-    const offStatus = provider.onStatus((st) => {
-      setStatus(st);
-      if (st === 'disconnected') hasSyncedOnceRef.current = false;
-    });
-    const offSynced = provider.onSynced((s) => {
-      setSynced(s);
-      if (s) hasSyncedOnceRef.current = true;
-    });
+    const offStatus = provider.onStatus(setStatus);
+    const offSynced = provider.onSynced(setSynced);
 
     const onAware = () => {
       const states = Array.from(provider.awareness.getStates().entries());
@@ -172,7 +165,6 @@ export default function EditorPage() {
     onAware();
 
     return () => {
-      hasSyncedOnceRef.current = false;
       offStatus();
       offSynced();
       provider.awareness.off('update', onAware);
@@ -329,7 +321,6 @@ export default function EditorPage() {
               doc={doc}
               access={access}
               user={user}
-              hasSyncedOnceRef={hasSyncedOnceRef}
               canHtmlAutosaveRef={canHtmlAutosaveRef}
               setSaveError={setSaveError}
               scheduleAutosaveIndicator={scheduleAutosaveIndicator}
@@ -368,7 +359,6 @@ function CollaborativeEditorSurface({
   doc,
   access,
   user,
-  hasSyncedOnceRef,
   canHtmlAutosaveRef,
   setSaveError,
   scheduleAutosaveIndicator,
@@ -378,7 +368,6 @@ function CollaborativeEditorSurface({
   doc: any;
   access: any;
   user: any;
-  hasSyncedOnceRef: MutableRefObject<boolean>;
   canHtmlAutosaveRef: MutableRefObject<boolean>;
   setSaveError: (msg: string | null) => void;
   scheduleAutosaveIndicator: () => void;
@@ -407,7 +396,7 @@ function CollaborativeEditorSurface({
       ],
       onUpdate: ({ editor: ed }) => {
         scheduleAutosaveIndicator();
-        if (!hasSyncedOnceRef.current || !canHtmlAutosaveRef.current || !doc?.id) return;
+        if (!canHtmlAutosaveRef.current || !doc?.id) return;
         if (htmlAutosaveTimer.current) window.clearTimeout(htmlAutosaveTimer.current);
         const id = doc.id;
         const html = ed.getHTML();
@@ -439,7 +428,7 @@ function CollaborativeEditorSurface({
     const flush = () => {
       if (document.visibilityState !== 'hidden') return;
       const ed = editor;
-      if (!ed || ed.isDestroyed || !access?.canEdit || !doc?.id || !hasSyncedOnceRef.current) return;
+      if (!ed || ed.isDestroyed || !access?.canEdit || !doc?.id) return;
       Api.putDoc(doc.id, { contentHtml: ed.getHTML(), autosave: true })
         .then(() => setSaveError(null))
         .catch((err) =>

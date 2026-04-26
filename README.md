@@ -152,6 +152,8 @@ REFRESH_TOKEN_TTL=7d
 CORS_ORIGIN=http://localhost:5173
 ```
 
+For **production**, either set `CORS_ORIGIN` to your real frontend URL(s), comma-separated, or **leave it unset** (or `*`) so the server **reflects** the browser `Origin` header — otherwise API calls from Vercel can fail while WebSockets still connect, and saves or reloads will look “broken.”
+
 ### Frontend `.env`
 
 ```env
