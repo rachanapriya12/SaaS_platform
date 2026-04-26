@@ -58,6 +58,16 @@ Before you start:
 
 **Proves:** Yjs CRDT real-time sync over WebSocket, presence/awareness. Top bar shows "Saved just now" — confirming the autosave indicator. Disconnect briefly (close Window B and reopen) — the doc is fully persistent because every Yjs update was appended server-side before broadcast.
 
+### Under the hood (what you are demonstrating)
+
+| What you see | Mechanism |
+|----------------|-----------|
+| Editor 2 sees Editor 1’s text **while both are online** | **WebSocket** `/collaboration/:tenantId/:documentId` + **Yjs**: the server broadcasts CRDT updates to everyone in the room. |
+| Content still there **after refresh or reopen** | **MongoDB**: `GET /api/documents/:id` loads saved `content_html` (and the server hydrates Yjs from snapshot/HTML). |
+| “Saved” / persistence without one request per key | Server **debounces** writes to MongoDB; the app also uses **`PUT /api/documents/:id`** with `autosave: true` for HTML backup. |
+
+You are **not** relying on `localStorage` for document body — the database and the socket together provide durability + live sync.
+
 ---
 
 ## 6. Viewer-only mode

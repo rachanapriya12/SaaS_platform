@@ -46,7 +46,29 @@ For the working proof of concept, this repository uses the following implementat
 
 ### Document persistence and real-time collaboration
 
-The editor uses **MongoDB** for persistent document storage and **WebSockets** for real-time collaboration. When a document is opened, saved content is loaded from MongoDB first (`GET /api/documents/:id`). Real-time updates are then synchronized between active users through WebSocket rooms keyed by **documentId** (and tenant), on the path `/collaboration/:tenantId/:documentId`. MongoDB remains the source of truth for long-term storage; the socket layer carries live Yjs updates between editors. Debounced saves (about 500–1000ms) persist HTML and CRDT snapshot fields on the document record.
+This is the behaviour you get when **Editor 1** types and **Editor 2** opens the same document: live text comes from the **WebSocket + Yjs** layer; **reopen / refresh** loads from **MongoDB** via the REST API.
+
+**Why Editor 2 sees Editor 1’s text**
+
+- Each editor attaches TipTap to a shared **Yjs** document (`Y.Doc`).
+- Changes are sent as **binary CRDT updates** over a WebSocket to the backend.
+- The server keeps **one live Yjs state per room** (`tenantId` + `documentId`) and **broadcasts** updates to every other connected client.
+- Editor 2 runs the same sync protocol, so their editor **merges** the shared document — no polling and no “save to see others” step for active sessions.
+
+**Why we still use REST + MongoDB (and which endpoints)**
+
+We **do** store what editors type; we do **not** send one HTTP request per keystroke (that would be slow and race-prone). Persistence is **debounced** (roughly 500–1000ms after edits) on the server, plus an optional **HTML autosave** from the browser.
+
+| Piece | What it does |
+|--------|----------------|
+| `GET /api/documents/:documentId` | Loads title, `content_html`, version metadata, access — **first thing when opening a doc**. |
+| `PUT /api/documents/:documentId` (body: `contentHtml`, `autosave: true`) | **Debounced** backup save of sanitized HTML to MongoDB (no new history row on every call). |
+| `PATCH /api/documents/:documentId` | Same write handler as PUT (e.g. rename title, or full saves that create versions when not autosave). |
+| WebSocket `GET ws(s)://…/collaboration/:tenantId/:documentId?token=…` | **Live** Yjs sync between all editors in the room; server also appends updates and writes snapshot/HTML to MongoDB on a timer. |
+
+MongoDB fields used for the sheet include **`contentHtml`**, **`contentBytes`** (encoded Yjs snapshot), and **`YjsUpdate`** rows for replay. **`GET /api/documents/:id`** remains the source of truth when **opening** or **refreshing**; the socket is for **who is typing right now**.
+
+The same document router is mounted at **`/documents/...`** for older paths; the editor and demos use **`/api/documents/...`** for clarity.
 
 ---
 
