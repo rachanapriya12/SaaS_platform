@@ -3,13 +3,14 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
+import { getApiBase } from './lib/apiBase';
 import './index.css';
 
 if (import.meta.env.PROD) {
-  const base = import.meta.env.VITE_API_BASE?.trim();
-  if (!base || base.includes('localhost')) {
+  const base = getApiBase();
+  if (base.includes('localhost')) {
     console.error(
-      '[CollabDocs] Set VITE_API_BASE in Vercel (Project → Settings → Environment Variables) to your backend URL, then redeploy.'
+      '[CollabDocs] Production build is still using localhost for the API. Set VITE_API_BASE in frontend/.env.production or Vercel, then rebuild.'
     );
   }
 }

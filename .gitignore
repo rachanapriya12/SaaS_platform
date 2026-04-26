@@ -9,6 +9,8 @@ build/
 .env
 .env.*
 !.env.example
+# Public production defaults for Vite (no secrets — API URL only)
+!frontend/.env.production
 
 # Logs
 *.log

@@ -178,7 +178,7 @@ The fastest path is **Render**:
    - `JWT_REFRESH_SECRET`
    - `ACCESS_TOKEN_TTL=15m`
    - `REFRESH_TOKEN_TTL=7d`
-   - `CORS_ORIGIN` (your Vercel frontend URL, e.g. `https://collabdocs.vercel.app`)
+   - `CORS_ORIGIN` (your Vercel frontend URL, e.g. `https://frontend-mu-blue-32.vercel.app`)
 5. Deploy. Note the public URL, e.g. `https://collab-api.onrender.com`.
 6. (One-time) From a local terminal, seed the cloud database:
    ```bash
@@ -195,8 +195,7 @@ The fastest path is **Render**:
    - **Framework Preset:** Vite (auto-detected)
    - **Build Command:** `npm run build`
    - **Output Directory:** `dist`
-4. Add environment variables (Project Settings → Environment Variables):
-   - `VITE_API_BASE` = your backend URL (e.g. `https://collab-api.onrender.com`)
+4. **API URL:** Production builds read `frontend/.env.production` (`VITE_API_BASE`). Update that file to your Render URL if it differs, commit, and redeploy. You can instead set `VITE_API_BASE` in Vercel (it overrides the file).
 5. Deploy.
 
 After the first frontend deploy, copy its URL and update the backend's `CORS_ORIGIN` env var to that URL, then redeploy the backend.

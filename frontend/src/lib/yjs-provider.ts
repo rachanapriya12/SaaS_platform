@@ -212,8 +212,3 @@ export class CollabProvider {
     );
   };
 }
-
-export function getWebsocketBase() {
-  const apiBase = (import.meta.env.VITE_API_BASE as string) || 'http://localhost:4000';
-  return apiBase.replace(/^http/, 'ws');
-}

@@ -1,6 +1,6 @@
 /* Lightweight API client with auto refresh + tenant header injection */
 
-const API_BASE = (import.meta.env.VITE_API_BASE as string) || 'http://localhost:4000';
+import { getApiBase } from './apiBase';
 
 export interface ApiError extends Error {
   status: number;
@@ -44,14 +44,12 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
-export function getApiBase() {
-  return API_BASE;
-}
+export { getApiBase } from './apiBase';
 
 async function refreshAccessToken(): Promise<boolean> {
   if (!refreshToken) return false;
   try {
-    const res = await fetch(`${API_BASE}/auth/refresh`, {
+    const res = await fetch(`${getApiBase()}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
@@ -79,7 +77,7 @@ export async function api<T = unknown>(
   if (sendTenant && tenantId) finalHeaders['X-Tenant-Id'] = tenantId;
 
   const doFetch = () =>
-    fetch(`${API_BASE}${path}`, {
+    fetch(`${getApiBase()}${path}`, {
       ...rest,
       headers: finalHeaders,
       body: json !== undefined ? JSON.stringify(json) : (rest as RequestInit).body,
