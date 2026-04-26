@@ -18,6 +18,7 @@ interface DocSession {
   awareness: awarenessProtocol.Awareness;
   conns: Map<WebSocket, ConnContext>;
   versionTimer: NodeJS.Timeout | null;
+  contentTimer: NodeJS.Timeout | null;
   versionDirty: boolean;
 }
 
@@ -48,12 +49,19 @@ async function loadDocFromStorage(tenantId: string, documentId: string): Promise
     ydoc.transact(() => {
       for (const row of updates) {
         try {
-          Y.applyUpdate(ydoc, new Uint8Array((row.updateData as any).buffer || row.updateData));
+          Y.applyUpdate(ydoc, toUint8Array(row.updateData));
         } catch (e) {
           console.error('[ws] applyUpdate failed', e);
         }
       }
     });
+  } else {
+    const doc = await DocumentDoc.findOne({ _id: documentId, tenantId }, 'contentHtml').lean();
+    const latest = await Version.findOne({ documentId }, 'contentHtml').sort({ versionNumber: -1 }).lean();
+    const html = (doc?.contentHtml || latest?.contentHtml || '').trim();
+    if (html) {
+      seedYDocFromHtml(ydoc, html);
+    }
   }
   return ydoc;
 }
@@ -76,6 +84,7 @@ function getOrCreateSession(tenantId: string, documentId: string): Promise<DocSe
       awareness,
       conns: new Map(),
       versionTimer: null,
+      contentTimer: null,
       versionDirty: false,
     };
     sessions.set(key, session);
@@ -83,6 +92,7 @@ function getOrCreateSession(tenantId: string, documentId: string): Promise<DocSe
     ydoc.on('update', (update: Uint8Array, origin: unknown) => {
       persistUpdate(tenantId, documentId, update);
       session.versionDirty = true;
+      scheduleContentSave(session, tenantId, documentId);
 
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, MESSAGE_SYNC);
@@ -141,6 +151,31 @@ function sendBytes(ws: WebSocket, bytes: Uint8Array) {
   }
 }
 
+function toUint8Array(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  if (Buffer.isBuffer(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  const binary = value as { buffer?: Buffer; value?: () => Buffer };
+  if (binary?.buffer && Buffer.isBuffer(binary.buffer)) {
+    return new Uint8Array(binary.buffer.buffer, binary.buffer.byteOffset, binary.buffer.byteLength);
+  }
+  if (typeof binary?.value === 'function') {
+    return toUint8Array(binary.value());
+  }
+  return new Uint8Array(Buffer.from(value as ArrayLike<number>));
+}
+
+function scheduleContentSave(session: DocSession, tenantId: string, documentId: string) {
+  if (session.contentTimer) clearTimeout(session.contentTimer);
+  session.contentTimer = setTimeout(() => {
+    session.contentTimer = null;
+    saveCurrentContent(tenantId, documentId, session.ydoc);
+  }, 600);
+}
+
 async function persistUpdate(tenantId: string, documentId: string, update: Uint8Array) {
   try {
     await YjsUpdate.create({
@@ -151,6 +186,17 @@ async function persistUpdate(tenantId: string, documentId: string, update: Uint8
     await DocumentDoc.updateOne({ _id: documentId }, { $set: { updatedAt: new Date() } });
   } catch (err) {
     console.error('[ws] persistUpdate failed:', err);
+  }
+}
+
+async function saveCurrentContent(tenantId: string, documentId: string, ydoc: Y.Doc) {
+  try {
+    await DocumentDoc.updateOne(
+      { _id: documentId, tenantId },
+      { $set: { contentHtml: yDocToHtml(ydoc), updatedAt: new Date() } }
+    );
+  } catch (err) {
+    console.error('[ws] saveCurrentContent failed:', err);
   }
 }
 
@@ -181,7 +227,7 @@ function yDocToHtml(ydoc: Y.Doc): string {
   function nodeToHtml(node: Y.XmlElement | Y.XmlText | Y.XmlFragment): string {
     if (node instanceof Y.XmlText) return escapeHtml(node.toString());
     if (node instanceof Y.XmlElement) {
-      const tag = node.nodeName || 'div';
+      const tag = normalizeTag(node.nodeName || 'div');
       let inner = '';
       for (const c of node.toArray()) inner += nodeToHtml(c as any);
       return `<${tag}>${inner}</${tag}>`;
@@ -196,6 +242,52 @@ function yDocToHtml(ydoc: Y.Doc): string {
   } catch {
     return '';
   }
+}
+
+function normalizeTag(tag: string) {
+  switch (tag) {
+    case 'paragraph':
+      return 'p';
+    case 'bulletList':
+      return 'ul';
+    case 'orderedList':
+      return 'ol';
+    case 'listItem':
+      return 'li';
+    default:
+      return tag;
+  }
+}
+
+function seedYDocFromHtml(ydoc: Y.Doc, html: string) {
+  const text = html
+    .replace(/<\/(p|h[1-6]|li|blockquote)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (text.length === 0) return;
+  const frag = ydoc.getXmlFragment('default');
+  ydoc.transact(() => {
+    frag.insert(
+      0,
+      text.map((line) => {
+        const p = new Y.XmlElement('paragraph');
+        const t = new Y.XmlText();
+        t.insert(0, line);
+        p.insert(0, [t]);
+        return p;
+      })
+    );
+  });
 }
 
 function escapeHtml(s: string) {
@@ -315,6 +407,9 @@ export function attachCollabWebsocket(wss: WebSocketServer) {
           const messageType = decoding.readVarUint(decoder);
           switch (messageType) {
             case MESSAGE_SYNC: {
+              if (!ctx.canEdit && isWriteSyncMessage(buf)) {
+                break;
+              }
               const encoder = encoding.createEncoder();
               encoding.writeVarUint(encoder, MESSAGE_SYNC);
               const syncMessageType = syncProtocol.readSyncMessage(
@@ -323,9 +418,6 @@ export function attachCollabWebsocket(wss: WebSocketServer) {
                 session.ydoc,
                 ws
               );
-              if (!ctx.canEdit && (syncMessageType === 1 || syncMessageType === 2)) {
-                /* discard writes from viewers */
-              }
               if (encoding.length(encoder) > 1) {
                 sendBytes(ws, encoding.toUint8Array(encoder));
               }
@@ -357,6 +449,11 @@ export function attachCollabWebsocket(wss: WebSocketServer) {
             null
           );
           if (session.conns.size === 0) {
+            if (session.contentTimer) {
+              clearTimeout(session.contentTimer);
+              session.contentTimer = null;
+            }
+            saveCurrentContent(ctx.tenantId, ctx.documentId, session.ydoc);
             if (session.versionDirty) {
               autoSnapshotVersion(ctx.tenantId, ctx.documentId, session.ydoc);
             }
@@ -381,6 +478,13 @@ export function attachCollabWebsocket(wss: WebSocketServer) {
       }
     }
   });
+}
+
+function isWriteSyncMessage(buf: Uint8Array) {
+  const decoder = decoding.createDecoder(buf);
+  decoding.readVarUint(decoder);
+  const syncType = decoding.readVarUint(decoder);
+  return syncType !== 0;
 }
 
 /* Audit throttle */

@@ -44,6 +44,7 @@ const documentSchema = new Schema(
     _id: { type: String, default: () => nanoid() },
     tenantId: { type: String, required: true, index: true },
     title: { type: String, required: true },
+    contentHtml: { type: String, default: '' },
     createdBy: { type: String, required: true },
     deletedAt: { type: Date, default: null, index: true },
   },

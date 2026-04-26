@@ -93,6 +93,7 @@ router.post('/', async (req, res, next) => {
     const doc = await DocumentDoc.create({
       tenantId: req.tenantId!,
       title,
+      contentHtml: '',
       createdBy: req.user!.id,
     });
     await Permission.create({
@@ -181,7 +182,6 @@ router.patch('/:documentId', async (req, res, next) => {
 
     const previousTitle = doc.title;
     if (title !== undefined) doc.title = String(title);
-    await doc.save();
 
     if (title !== undefined && previousTitle !== doc.title) {
       await writeAudit({
@@ -197,6 +197,7 @@ router.patch('/:documentId', async (req, res, next) => {
 
     if (contentHtml !== undefined) {
       const clean = sanitizeHtml(String(contentHtml), SANITIZE_OPTS);
+      doc.contentHtml = clean;
       const last = await Version.findOne({ documentId: doc._id }).sort({ versionNumber: -1 }).lean();
       const next = (last?.versionNumber ?? 0) + 1;
       await Version.create({
@@ -218,6 +219,8 @@ router.patch('/:documentId', async (req, res, next) => {
         metadata: { versionNumber: next, source: 'manual_save' },
       });
     }
+
+    await doc.save();
 
     res.json({ document: docToJson(doc.toObject(), access.effectiveRole, null) });
   } catch (e) {

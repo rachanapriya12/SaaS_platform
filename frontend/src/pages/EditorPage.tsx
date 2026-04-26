@@ -55,6 +55,7 @@ export default function EditorPage() {
   >([]);
   const [showShare, setShowShare] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
+  const [collab, setCollab] = useState<{ ydoc: Y.Doc; provider: CollabProvider } | null>(null);
 
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<CollabProvider | null>(null);
@@ -124,6 +125,7 @@ export default function EditorPage() {
       doc: ydoc,
     });
     providerRef.current = provider;
+    setCollab({ ydoc, provider });
 
     const userColor = colorFor(user.id);
     provider.awareness.setLocalStateField('user', {
@@ -157,6 +159,7 @@ export default function EditorPage() {
       ydoc.destroy();
       ydocRef.current = null;
       providerRef.current = null;
+      setCollab(null);
     };
   }, [doc?.id, access?.canEdit, user?.id]);
 
@@ -164,7 +167,7 @@ export default function EditorPage() {
     {
       editable: !!access?.canEdit,
       extensions:
-        ydocRef.current && providerRef.current
+        collab
           ? [
               StarterKit.configure({ history: false }),
               Underline,
@@ -172,9 +175,9 @@ export default function EditorPage() {
               Placeholder.configure({
                 placeholder: 'Start typing… your changes are saved and synced in real time.',
               }),
-              Collaboration.configure({ document: ydocRef.current }),
+              Collaboration.configure({ document: collab.ydoc }),
               CollaborationCursor.configure({
-                provider: providerRef.current,
+                provider: collab.provider,
                 user: {
                   name: user?.name || 'User',
                   color: user ? colorFor(user.id) : '#3b82f6',
@@ -188,12 +191,10 @@ export default function EditorPage() {
               Placeholder.configure({ placeholder: 'Loading…' }),
             ],
       onUpdate: () => {
-        // Yjs autosaves, just update last-saved indicator with debounce
         scheduleAutosaveIndicator();
       },
     },
-    // re-create editor when provider/doc identity changes
-    [providerRef.current, ydocRef.current, access?.canEdit]
+    [collab?.provider, collab?.ydoc, access?.canEdit]
   );
 
   const indicatorTimer = useRef<number | null>(null);
