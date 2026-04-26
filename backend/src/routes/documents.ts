@@ -143,7 +143,10 @@ router.get('/:documentId', async (req, res, next) => {
       .sort({ versionNumber: -1 })
       .lean();
     res.json({
-      document: docToJson(doc, access.effectiveRole, null),
+      document: {
+        ...docToJson(doc, access.effectiveRole, null),
+        content_html: doc.contentHtml || '',
+      },
       access,
       latestVersion: latest
         ? {
@@ -169,7 +172,8 @@ router.patch('/:documentId', async (req, res, next) => {
       documentId: String(doc._id),
     });
 
-    const { title, contentHtml } = req.body || {};
+    const { title, contentHtml, autosave } = req.body || {};
+    const isAutosave = autosave === true;
     if (title === undefined && contentHtml === undefined) {
       return res.status(400).json({ error: 'nothing to update' });
     }
@@ -198,26 +202,28 @@ router.patch('/:documentId', async (req, res, next) => {
     if (contentHtml !== undefined) {
       const clean = sanitizeHtml(String(contentHtml), SANITIZE_OPTS);
       doc.contentHtml = clean;
-      const last = await Version.findOne({ documentId: doc._id }).sort({ versionNumber: -1 }).lean();
-      const next = (last?.versionNumber ?? 0) + 1;
-      await Version.create({
-        tenantId: req.tenantId!,
-        documentId: String(doc._id),
-        versionNumber: next,
-        title: doc.title,
-        contentHtml: clean,
-        createdBy: req.user!.id,
-        reason: 'manual_save',
-      });
-      await writeAudit({
-        tenantId: req.tenantId!,
-        userId: req.user!.id,
-        actorEmail: req.user!.email,
-        action: 'doc.update',
-        targetType: 'document',
-        targetId: String(doc._id),
-        metadata: { versionNumber: next, source: 'manual_save' },
-      });
+      if (!isAutosave) {
+        const last = await Version.findOne({ documentId: doc._id }).sort({ versionNumber: -1 }).lean();
+        const next = (last?.versionNumber ?? 0) + 1;
+        await Version.create({
+          tenantId: req.tenantId!,
+          documentId: String(doc._id),
+          versionNumber: next,
+          title: doc.title,
+          contentHtml: clean,
+          createdBy: req.user!.id,
+          reason: 'manual_save',
+        });
+        await writeAudit({
+          tenantId: req.tenantId!,
+          userId: req.user!.id,
+          actorEmail: req.user!.email,
+          action: 'doc.update',
+          targetType: 'document',
+          targetId: String(doc._id),
+          metadata: { versionNumber: next, source: 'manual_save' },
+        });
+      }
     }
 
     await doc.save();

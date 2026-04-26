@@ -40,9 +40,16 @@ function roomKey(tenantId: string, documentId: string) {
   return `${tenantId}:${documentId}`;
 }
 
-async function loadDocFromStorage(tenantId: string, documentId: string): Promise<Y.Doc> {
-  const ydoc = new Y.Doc();
+function yDocLooksEmpty(ydoc: Y.Doc): boolean {
+  try {
+    const html = yDocToHtml(ydoc);
+    return html.replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').trim().length === 0;
+  } catch {
+    return true;
+  }
+}
 
+async function loadDocFromStorage(tenantId: string, documentId: string): Promise<Y.Doc> {
   const docRow = await DocumentDoc.findOne(
     { _id: documentId, tenantId },
     'contentBytes contentHtml'
@@ -50,13 +57,17 @@ async function loadDocFromStorage(tenantId: string, documentId: string): Promise
 
   if (docRow?.contentBytes) {
     try {
-      Y.applyUpdate(ydoc, toUint8Array(docRow.contentBytes));
-      return ydoc;
+      const fromSnap = new Y.Doc();
+      Y.applyUpdate(fromSnap, toUint8Array(docRow.contentBytes));
+      if (!yDocLooksEmpty(fromSnap)) {
+        return fromSnap;
+      }
     } catch (e) {
       console.error('[ws] snapshot apply failed:', e);
     }
   }
 
+  const ydoc = new Y.Doc();
   const updates = await YjsUpdate.find({ tenantId, documentId })
     .sort({ _id: 1 })
     .lean();
@@ -70,17 +81,20 @@ async function loadDocFromStorage(tenantId: string, documentId: string): Promise
         }
       }
     });
-    return ydoc;
+    if (!yDocLooksEmpty(ydoc)) {
+      return ydoc;
+    }
   }
 
   const latest = await Version.findOne({ documentId }, 'contentHtml')
     .sort({ versionNumber: -1 })
     .lean();
+  const fresh = new Y.Doc();
   const html = (docRow?.contentHtml || latest?.contentHtml || '').trim();
   if (html) {
-    seedYDocFromHtml(ydoc, html);
+    seedYDocFromHtml(fresh, html);
   }
-  return ydoc;
+  return fresh;
 }
 
 const sessionLocks = new Map<string, Promise<DocSession>>();
@@ -190,7 +204,7 @@ function scheduleContentSave(session: DocSession, tenantId: string, documentId: 
   session.contentTimer = setTimeout(() => {
     session.contentTimer = null;
     saveCurrentContent(tenantId, documentId, session.ydoc);
-  }, 600);
+  }, 350);
 }
 
 async function persistUpdate(tenantId: string, documentId: string, update: Uint8Array) {
@@ -397,13 +411,8 @@ export function attachCollabWebsocket(wss: WebSocketServer) {
 
       ws.binaryType = 'arraybuffer';
 
-      /* Initial sync */
+      /* Awareness only — Yjs sync is client-initiated (SyncStep1) per y-protocols */
       {
-        const encoder = encoding.createEncoder();
-        encoding.writeVarUint(encoder, MESSAGE_SYNC);
-        syncProtocol.writeSyncStep1(encoder, session.ydoc);
-        sendBytes(ws, encoding.toUint8Array(encoder));
-
         const states = session.awareness.getStates();
         if (states.size > 0) {
           const aEncoder = encoding.createEncoder();
@@ -508,7 +517,8 @@ function isWriteSyncMessage(buf: Uint8Array) {
   const decoder = decoding.createDecoder(buf);
   decoding.readVarUint(decoder);
   const syncType = decoding.readVarUint(decoder);
-  return syncType !== 0;
+  /* Only block Yjs updates (2); viewers must still send SyncStep2 (1) for the handshake */
+  return syncType === 2;
 }
 
 /* Audit throttle */

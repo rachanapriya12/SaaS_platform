@@ -105,7 +105,7 @@ export class CollabProvider {
       this.syncFallbackTimer = window.setTimeout(() => {
         this.syncFallbackTimer = null;
         this.setSynced(true);
-      }, 2000);
+      }, 1000);
     };
     ws.onmessage = (e) => {
       const data = new Uint8Array(e.data as ArrayBuffer);

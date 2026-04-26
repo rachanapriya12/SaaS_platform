@@ -59,6 +59,9 @@ export default function EditorPage() {
 
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<CollabProvider | null>(null);
+  const docIdRef = useRef<string | null>(null);
+  const canHtmlAutosaveRef = useRef(false);
+  const htmlAutosaveTimer = useRef<number | null>(null);
 
   // Step 1: load document metadata + ensure tenant context is correct
   useEffect(() => {
@@ -106,6 +109,14 @@ export default function EditorPage() {
       cancelled = true;
     };
   }, [documentId, memberships]);
+
+  useEffect(() => {
+    docIdRef.current = doc?.id ?? null;
+  }, [doc?.id]);
+
+  useEffect(() => {
+    canHtmlAutosaveRef.current = !!(access?.canEdit && collab);
+  }, [access?.canEdit, collab]);
 
   // Step 2: set up Yjs once we have document & access
   useEffect(() => {
@@ -190,14 +201,40 @@ export default function EditorPage() {
               Link2.configure({ openOnClick: false }),
               Placeholder.configure({ placeholder: 'Loading…' }),
             ],
-      onUpdate: () => {
+      onUpdate: ({ editor: ed }) => {
         scheduleAutosaveIndicator();
+        if (!canHtmlAutosaveRef.current || !docIdRef.current) return;
+        if (htmlAutosaveTimer.current) window.clearTimeout(htmlAutosaveTimer.current);
+        const id = docIdRef.current;
+        const html = ed.getHTML();
+        htmlAutosaveTimer.current = window.setTimeout(() => {
+          htmlAutosaveTimer.current = null;
+          Api.updateDoc(id, { contentHtml: html, autosave: true }).catch(() => {});
+        }, 1200);
       },
     },
     [collab?.provider, collab?.ydoc, access?.canEdit]
   );
 
   const indicatorTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (htmlAutosaveTimer.current) window.clearTimeout(htmlAutosaveTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const flush = () => {
+      if (document.visibilityState !== 'hidden') return;
+      const ed = editor;
+      const id = doc?.id;
+      if (!ed || ed.isDestroyed || !access?.canEdit || !collab || !id) return;
+      Api.updateDoc(id, { contentHtml: ed.getHTML(), autosave: true }).catch(() => {});
+    };
+    document.addEventListener('visibilitychange', flush);
+    return () => document.removeEventListener('visibilitychange', flush);
+  }, [editor, doc?.id, access?.canEdit, collab]);
   function scheduleAutosaveIndicator() {
     if (indicatorTimer.current) window.clearTimeout(indicatorTimer.current);
     indicatorTimer.current = window.setTimeout(() => setSavedAt(Date.now()), 800);

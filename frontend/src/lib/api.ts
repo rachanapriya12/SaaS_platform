@@ -193,8 +193,10 @@ export const Api = {
   getDoc: (id: string) => api<{ document: any; access: any; latestVersion: any }>(`/documents/${id}`),
   createDoc: (title: string) =>
     api<{ document: any }>('/documents', { method: 'POST', json: { title } }),
-  updateDoc: (id: string, data: { title?: string; contentHtml?: string }) =>
-    api<{ document: any }>(`/documents/${id}`, { method: 'PATCH', json: data }),
+  updateDoc: (
+    id: string,
+    data: { title?: string; contentHtml?: string; autosave?: boolean }
+  ) => api<{ document: any }>(`/documents/${id}`, { method: 'PATCH', json: data }),
   deleteDoc: (id: string) => api(`/documents/${id}`, { method: 'DELETE' }),
   restoreDoc: (id: string) => api(`/documents/${id}/restore`, { method: 'POST' }),
 
