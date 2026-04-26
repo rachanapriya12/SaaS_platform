@@ -7,6 +7,10 @@ import { getApiBase } from './api';
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
+/** @see y-protocols/sync messageYjsSyncStep2 */
+const YJS_SYNC_STEP2 = 1;
+/** @see y-protocols/sync messageYjsUpdate */
+const YJS_UPDATE = 2;
 
 export interface ProviderOptions {
   url: string;
@@ -116,7 +120,8 @@ export class CollabProvider {
           const encoder = encoding.createEncoder();
           encoding.writeVarUint(encoder, MESSAGE_SYNC);
           const syncMessageType = syncProtocol.readSyncMessage(decoder, encoder, this.doc, this);
-          if (syncMessageType === 1) {
+          /* Step2 = initial merge; Update = live peer edits — both mean we're receiving remote state */
+          if (syncMessageType === YJS_SYNC_STEP2 || syncMessageType === YJS_UPDATE) {
             this.setSynced(true);
           }
           if (encoding.length(encoder) > 1) {
