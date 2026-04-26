@@ -57,6 +57,7 @@ app.use('/auth', authLimiter, authRoutes);
 app.use('/organizations', orgRoutes);
 app.use('/organizations/:tenantId/users', userRoutes);
 app.use('/documents', documentRoutes);
+app.use('/api/documents', documentRoutes);
 app.use('/documents', sharingRoutes);
 app.use('/documents', versionRoutes);
 app.use('/audit-logs', auditRoutes);

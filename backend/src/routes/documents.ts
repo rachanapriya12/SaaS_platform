@@ -1,9 +1,10 @@
-import { Router } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import sanitizeHtml from 'sanitize-html';
 import { requireAuth, requireTenant } from '../middleware/auth';
 import { resolveDocAccess, getOrgRole } from '../utils/permissions';
 import { writeAudit } from '../utils/audit';
 import { DocumentDoc, Permission, Version, User } from '../models';
+import { isHtmlEffectivelyEmpty } from '../utils/htmlContent';
 
 const router = Router();
 
@@ -36,11 +37,17 @@ function docToJson(d: any, myRole: string | null, creator?: { name: string; emai
   };
 }
 
-/**
- * List docs the user can access in the active tenant.
- * - Org admins / super admins: all docs
- * - Others: only docs they have a Permission row for
- */
+async function toDocumentView(doc: any, accessRole: string | null) {
+  const latest = await Version.findOne({ documentId: doc._id }).sort({ versionNumber: -1 }).lean();
+  const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
+  return {
+    ...docToJson(plain, accessRole, null),
+    content_html: plain.contentHtml || '',
+    organization_id: plain.tenantId,
+    version: latest?.versionNumber ?? 1,
+  };
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const includeDeleted =
@@ -123,7 +130,9 @@ router.post('/', async (req, res, next) => {
       metadata: { title },
     });
 
-    res.status(201).json({ document: docToJson(doc.toObject(), 'owner', { name: req.user!.name, email: req.user!.email }) });
+    res.status(201).json({
+      document: docToJson(doc.toObject(), 'owner', { name: req.user!.name, email: req.user!.email }),
+    });
   } catch (e) {
     next(e);
   }
@@ -132,21 +141,28 @@ router.post('/', async (req, res, next) => {
 router.get('/:documentId', async (req, res, next) => {
   try {
     const doc = await DocumentDoc.findOne({ _id: req.params.documentId, tenantId: req.tenantId }).lean();
-    if (!doc) return res.status(404).json({ error: 'Document not found' });
+    if (!doc) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
     const access = await resolveDocAccess({
       userId: req.user!.id,
       isSuperAdmin: req.user!.isSuperAdmin,
       documentId: String(doc._id),
     });
     if (!access.canView) return res.status(403).json({ error: 'No access' });
+
     const latest = await Version.findOne({ documentId: doc._id })
       .sort({ versionNumber: -1 })
       .lean();
+
+    console.log(
+      `[documents] document loaded from MongoDB documentId=${doc._id} tenantId=${req.tenantId} version=${latest?.versionNumber ?? 1}`
+    );
+
+    const documentView = await toDocumentView(doc, access.effectiveRole);
+
     res.json({
-      document: {
-        ...docToJson(doc, access.effectiveRole, null),
-        content_html: doc.contentHtml || '',
-      },
+      document: documentView,
       access,
       latestVersion: latest
         ? {
@@ -162,7 +178,7 @@ router.get('/:documentId', async (req, res, next) => {
   }
 });
 
-router.patch('/:documentId', async (req, res, next) => {
+async function writeDocument(req: Request, res: Response, next: NextFunction) {
   try {
     const doc = await DocumentDoc.findOne({ _id: req.params.documentId, tenantId: req.tenantId });
     if (!doc) return res.status(404).json({ error: 'Document not found' });
@@ -201,6 +217,17 @@ router.patch('/:documentId', async (req, res, next) => {
 
     if (contentHtml !== undefined) {
       const clean = sanitizeHtml(String(contentHtml), SANITIZE_OPTS);
+      const incomingEmpty = isHtmlEffectivelyEmpty(clean);
+      const existingEmpty = isHtmlEffectivelyEmpty(doc.contentHtml || '');
+
+      if (incomingEmpty && !existingEmpty && isAutosave) {
+        console.log(
+          `[documents] skip autosave: refuse empty overwrite documentId=${doc._id} tenantId=${req.tenantId}`
+        );
+        const view = await toDocumentView(doc.toObject(), access.effectiveRole);
+        return res.json({ document: view });
+      }
+
       doc.contentHtml = clean;
       if (!isAutosave) {
         const last = await Version.findOne({ documentId: doc._id }).sort({ versionNumber: -1 }).lean();
@@ -228,11 +255,19 @@ router.patch('/:documentId', async (req, res, next) => {
 
     await doc.save();
 
-    res.json({ document: docToJson(doc.toObject(), access.effectiveRole, null) });
+    console.log(
+      `[documents] document saved to MongoDB documentId=${doc._id} tenantId=${req.tenantId} autosave=${isAutosave}`
+    );
+
+    const view = await toDocumentView(doc.toObject(), access.effectiveRole);
+    res.json({ document: view });
   } catch (e) {
     next(e);
   }
-});
+}
+
+router.patch('/:documentId', writeDocument);
+router.put('/:documentId', writeDocument);
 
 router.delete('/:documentId', async (req, res, next) => {
   try {

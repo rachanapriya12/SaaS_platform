@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import * as Y from 'yjs';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -23,6 +23,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { Api, getAccessToken, setActiveTenant as setApiTenant } from '../lib/api';
 import { CollabProvider, getWebsocketBase } from '../lib/yjs-provider';
+import { seedYDocFromHtml } from '../lib/seedYDocFromHtml';
 import EditorToolbar from '../components/EditorToolbar';
 import ShareModal from '../components/ShareModal';
 import VersionHistoryPanel from '../components/VersionHistoryPanel';
@@ -56,11 +57,13 @@ export default function EditorPage() {
   const [showShare, setShowShare] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
   const [collab, setCollab] = useState<{ ydoc: Y.Doc; provider: CollabProvider } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<CollabProvider | null>(null);
   const docIdRef = useRef<string | null>(null);
   const canHtmlAutosaveRef = useRef(false);
+  const hasSyncedOnceRef = useRef(false);
   const htmlAutosaveTimer = useRef<number | null>(null);
 
   // Step 1: load document metadata + ensure tenant context is correct
@@ -118,10 +121,14 @@ export default function EditorPage() {
     canHtmlAutosaveRef.current = !!(access?.canEdit && collab);
   }, [access?.canEdit, collab]);
 
-  // Step 2: set up Yjs once we have document & access
+  // Step 2: hydrate Y.Doc from MongoDB HTML, then WebSocket (room = tenantId + documentId on server)
   useEffect(() => {
     if (!doc || !access || !user) return;
     const ydoc = new Y.Doc();
+    const initialHtml = String(doc.content_html ?? '').trim();
+    if (initialHtml) {
+      seedYDocFromHtml(ydoc, initialHtml);
+    }
     ydocRef.current = ydoc;
     const token = getAccessToken();
     if (!token) {
@@ -145,8 +152,14 @@ export default function EditorPage() {
       id: user.id,
     });
 
-    const offStatus = provider.onStatus(setStatus);
-    const offSynced = provider.onSynced(setSynced);
+    const offStatus = provider.onStatus((st) => {
+      setStatus(st);
+      if (st === 'disconnected') hasSyncedOnceRef.current = false;
+    });
+    const offSynced = provider.onSynced((s) => {
+      setSynced(s);
+      if (s) hasSyncedOnceRef.current = true;
+    });
 
     const onAware = () => {
       const states = Array.from(provider.awareness.getStates().entries());
@@ -163,6 +176,7 @@ export default function EditorPage() {
     onAware();
 
     return () => {
+      hasSyncedOnceRef.current = false;
       offStatus();
       offSynced();
       provider.awareness.off('update', onAware);
@@ -203,14 +217,18 @@ export default function EditorPage() {
             ],
       onUpdate: ({ editor: ed }) => {
         scheduleAutosaveIndicator();
-        if (!canHtmlAutosaveRef.current || !docIdRef.current) return;
+        if (!hasSyncedOnceRef.current || !canHtmlAutosaveRef.current || !docIdRef.current) return;
         if (htmlAutosaveTimer.current) window.clearTimeout(htmlAutosaveTimer.current);
         const id = docIdRef.current;
         const html = ed.getHTML();
         htmlAutosaveTimer.current = window.setTimeout(() => {
           htmlAutosaveTimer.current = null;
-          Api.updateDoc(id, { contentHtml: html, autosave: true }).catch(() => {});
-        }, 1200);
+          Api.putDoc(id, { contentHtml: html, autosave: true })
+            .then(() => setSaveError(null))
+            .catch((err) =>
+              setSaveError(err instanceof Error ? err.message : 'Could not save document to server')
+            );
+        }, 800);
       },
     },
     [collab?.provider, collab?.ydoc, access?.canEdit]
@@ -229,8 +247,13 @@ export default function EditorPage() {
       if (document.visibilityState !== 'hidden') return;
       const ed = editor;
       const id = doc?.id;
-      if (!ed || ed.isDestroyed || !access?.canEdit || !collab || !id) return;
-      Api.updateDoc(id, { contentHtml: ed.getHTML(), autosave: true }).catch(() => {});
+      if (!ed || ed.isDestroyed || !access?.canEdit || !collab || !id || !hasSyncedOnceRef.current)
+        return;
+      Api.putDoc(id, { contentHtml: ed.getHTML(), autosave: true })
+        .then(() => setSaveError(null))
+        .catch((err) =>
+          setSaveError(err instanceof Error ? err.message : 'Could not save document to server')
+        );
     };
     document.addEventListener('visibilitychange', flush);
     return () => document.removeEventListener('visibilitychange', flush);
@@ -275,7 +298,7 @@ export default function EditorPage() {
   if (!doc || !access) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-500">
-        Opening document…
+        Loading document from server…
       </div>
     );
   }
@@ -361,8 +384,13 @@ export default function EditorPage() {
 
       <main className="flex-1 px-4 py-8">
         <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-soft border border-slate-200 px-12 py-10 min-h-[70vh] tiptap-editor">
+          {saveError && (
+            <div className="text-xs text-red-600 mb-2 rounded border border-red-200 bg-red-50 px-2 py-1.5">
+              {saveError}
+            </div>
+          )}
           {!synced && (
-            <div className="text-xs text-slate-400 mb-2">Loading document state…</div>
+            <div className="text-xs text-slate-400 mb-2">Syncing live collaboration…</div>
           )}
           <EditorContent editor={editor} />
         </div>

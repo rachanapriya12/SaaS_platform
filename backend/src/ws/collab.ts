@@ -9,6 +9,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { DocumentDoc, User, Version, YjsUpdate } from '../models';
+import { isHtmlEffectivelyEmpty } from '../utils/htmlContent';
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
@@ -60,6 +61,9 @@ async function loadDocFromStorage(tenantId: string, documentId: string): Promise
       const fromSnap = new Y.Doc();
       Y.applyUpdate(fromSnap, toUint8Array(docRow.contentBytes));
       if (!yDocLooksEmpty(fromSnap)) {
+        console.log(
+          `[collab] document loaded from MongoDB documentId=${documentId} tenantId=${tenantId} (snapshot)`
+        );
         return fromSnap;
       }
     } catch (e) {
@@ -82,6 +86,9 @@ async function loadDocFromStorage(tenantId: string, documentId: string): Promise
       }
     });
     if (!yDocLooksEmpty(ydoc)) {
+      console.log(
+        `[collab] document loaded from MongoDB documentId=${documentId} tenantId=${tenantId} (yjs updates)`
+      );
       return ydoc;
     }
   }
@@ -94,6 +101,9 @@ async function loadDocFromStorage(tenantId: string, documentId: string): Promise
   if (html) {
     seedYDocFromHtml(fresh, html);
   }
+  console.log(
+    `[collab] document loaded from MongoDB documentId=${documentId} tenantId=${tenantId} (Y.Doc hydrated)`
+  );
   return fresh;
 }
 
@@ -129,8 +139,17 @@ function getOrCreateSession(tenantId: string, documentId: string): Promise<DocSe
       encoding.writeVarUint(encoder, MESSAGE_SYNC);
       syncProtocol.writeUpdate(encoder, update);
       const message = encoding.toUint8Array(encoder);
+      let recipients = 0;
       for (const ws of session.conns.keys()) {
-        if (ws !== origin) sendBytes(ws, message);
+        if (ws !== origin) {
+          sendBytes(ws, message);
+          recipients++;
+        }
+      }
+      if (recipients > 0) {
+        console.log(
+          `[collab] real-time update broadcasted documentId=${documentId} recipients=${recipients} updateBytes=${update.byteLength}`
+        );
       }
     });
 
@@ -204,7 +223,7 @@ function scheduleContentSave(session: DocSession, tenantId: string, documentId: 
   session.contentTimer = setTimeout(() => {
     session.contentTimer = null;
     saveCurrentContent(tenantId, documentId, session.ydoc);
-  }, 350);
+  }, 750);
 }
 
 async function persistUpdate(tenantId: string, documentId: string, update: Uint8Array) {
@@ -222,16 +241,31 @@ async function persistUpdate(tenantId: string, documentId: string, update: Uint8
 
 async function saveCurrentContent(tenantId: string, documentId: string, ydoc: Y.Doc) {
   try {
+    const html = yDocToHtml(ydoc);
+    const existing = await DocumentDoc.findOne({ _id: documentId, tenantId }).lean();
+    if (
+      isHtmlEffectivelyEmpty(html) &&
+      existing &&
+      !isHtmlEffectivelyEmpty(existing.contentHtml || '')
+    ) {
+      console.warn(
+        `[collab] skip save to MongoDB documentId=${documentId}: empty Y.Doc would overwrite existing HTML`
+      );
+      return;
+    }
     const snapshot = Y.encodeStateAsUpdate(ydoc);
     await DocumentDoc.updateOne(
       { _id: documentId, tenantId },
       {
         $set: {
           contentBytes: Buffer.from(snapshot),
-          contentHtml: yDocToHtml(ydoc),
+          contentHtml: html,
           updatedAt: new Date(),
         },
       }
+    );
+    console.log(
+      `[collab] document saved to MongoDB documentId=${documentId} snapshotBytes=${snapshot.byteLength}`
     );
   } catch (err) {
     console.error('[ws] saveCurrentContent failed:', err);
@@ -408,6 +442,10 @@ export function attachCollabWebsocket(wss: WebSocketServer) {
         controlledIds: new Set<number>(),
       };
       session.conns.set(ws, ctx);
+
+      console.log(
+        `[collab] user joined document room documentId=${auth.documentId} userId=${userRow._id} email=${userRow.email} peers=${session.conns.size}`
+      );
 
       ws.binaryType = 'arraybuffer';
 

@@ -44,6 +44,10 @@ For the working proof of concept, this repository uses the following implementat
 - JWT authentication + bcrypt password hashing
 - HTML sanitization, Helmet, CORS, and rate limiting
 
+### Document persistence and real-time collaboration
+
+The editor uses **MongoDB** for persistent document storage and **WebSockets** for real-time collaboration. When a document is opened, saved content is loaded from MongoDB first (`GET /api/documents/:id`). Real-time updates are then synchronized between active users through WebSocket rooms keyed by **documentId** (and tenant), on the path `/collaboration/:tenantId/:documentId`. MongoDB remains the source of truth for long-term storage; the socket layer carries live Yjs updates between editors. Debounced saves (about 500–1000ms) persist HTML and CRDT snapshot fields on the document record.
+
 ---
 
 ## Main Features
