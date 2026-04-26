@@ -169,7 +169,8 @@ The fastest path is **Render**:
 2. Create a new **Web Service** on Render and point it at the repo.
 3. Set:
    - **Root Directory:** `backend`
-   - **Build Command:** `npm install && npm run build`
+   - **Build Command:** `NPM_CONFIG_PRODUCTION=false npm install && npm run build`  
+     (Needed if `NODE_ENV=production` is set: otherwise `npm install` skips devDependencies and `tsc` is missing or wrong.)
    - **Start Command:** `npm start`
 4. Add environment variables (Settings → Environment):
    - `MONGODB_URI` (Atlas connection string)
@@ -220,3 +221,5 @@ After the first frontend deploy, copy its URL and update the backend's `CORS_ORI
 - **CORS error in browser** → set `CORS_ORIGIN` in the backend to the exact frontend origin.
 - **WebSocket fails on Vercel** → expected. Host the backend on Render/Railway/Fly and point `VITE_API_BASE` to that URL.
 - **Render: “Exited with status 254”** → the service root is probably the repo root (no `package.json` there). In Render → **Settings** → **Root Directory**, set **`backend`**, save, and **Manual Deploy**. Or use the repo’s **`render.yaml`** Blueprint so Render always builds from `backend/`.
+- **Render: TS5107 / `moduleResolution-node10`** → `NODE_ENV=production` made `npm install` skip **TypeScript** from `devDependencies`, so the build used a different global `tsc`. Use the build command above with `NPM_CONFIG_PRODUCTION=false`, or remove `NODE_ENV` from the service until after the install step.
+- **Vercel login calls `localhost:4000`** → add **`VITE_API_BASE`** = your Render API URL (no trailing slash) under **Environment Variables**, then **Redeploy** the frontend.

@@ -9,7 +9,8 @@ services:
     name: collabdocs-api
     runtime: node
     rootDir: backend
-    buildCommand: npm install && npm run build
+    # NODE_ENV=production skips devDependencies; TypeScript must install for `tsc`
+    buildCommand: NPM_CONFIG_PRODUCTION=false npm install && npm run build
     startCommand: npm start
     healthCheckPath: /health
     envVars:
