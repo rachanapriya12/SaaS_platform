@@ -1,5 +1,7 @@
 # CollabDocs - Multi-Tenant Document Collaboration Platform
 
+Live Demo: https://frontend-mu-blue-32.vercel.app/app
+
 CollabDocs is a cloud-based SaaS platform for business document collaboration. It supports multiple organizations on one shared platform while keeping each tenant's users, documents, permissions, and audit logs isolated.
 
 The platform is designed for real-time document editing, role-based access control, version history, restore flow, secure sharing, audit visibility, and scalable deployment.
